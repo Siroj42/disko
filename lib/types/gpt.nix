@@ -69,6 +69,13 @@ in
               or - for relative sizes from the disks end
             '';
           };
+          legacyBootable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = ''
+							Whether the partition should be marked as bootable through legacy BIOS boot.
+            '';
+          };
           content = diskoLib.partitionType { parent = config; device = partition.config.device; };
           _index = lib.mkOption {
             internal = true;
@@ -103,7 +110,8 @@ in
             --new=${toString partition._index}:${partition.start}:${partition.end} \
             --change-name=${toString partition._index}:${partition.label} \
             --typecode=${toString partition._index}:${partition.type} \
-            ${config.device}
+						${lib.optionalString partition.legacyBootable "--attributes=${toString partition._index}:set:2"} \
+						${config.device}
           # ensure /dev/disk/by-path/..-partN exists before continuing
           udevadm trigger --subsystem-match=block
           udevadm settle
