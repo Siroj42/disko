@@ -7,24 +7,24 @@ with lib;
 with builtins;
 
 let
-
+  outputs = import ../default.nix { inherit lib diskoLib; };
   diskoLib = {
 
     # like make-disk-image.nix from nixpkgs, but with disko config
-    makeDiskImage = args: (import ./make-disk-image.nix ({ inherit diskoLib; } // args)).pure;
+    makeDiskImages = args: (import ./make-disk-image.nix ({ inherit diskoLib; } // args)).pure;
 
     # a version of makeDiskImage which runs outside of the store
-    makeDiskImageScript = args: (import ./make-disk-image.nix ({ inherit diskoLib; } // args)).impure;
+    makeDiskImagesScript = args: (import ./make-disk-image.nix ({ inherit diskoLib; } // args)).impure;
 
     testLib = import ./tests.nix { inherit lib makeTest eval-config; };
     # like lib.types.oneOf but instead of a list takes an attrset
     # uses the field "type" to find the correct type in the attrset
-    subType = { types, extraArgs ? { parent = { type = "rootNode"; name = "root"; }; } }: lib.mkOptionType rec {
+    subType = { types, extraArgs ? { parent = { type = "rootNode"; name = "root"; }; } }: lib.mkOptionType {
       name = "subType";
       description = "one of ${concatStringsSep "," (attrNames types)}";
       check = x: if x ? type then types.${x.type}.check x else throw "No type option set in:\n${generators.toPretty {} x}";
       merge = loc: foldl'
-        (res: def: types.${def.value.type}.merge loc [
+        (_res: def: types.${def.value.type}.merge loc [
           # we add a dummy root parent node to render documentation
           (lib.recursiveUpdate { value._module.args = extraArgs; } def)
         ])
@@ -183,7 +183,7 @@ let
     /* Takes a Submodules config and options argument and returns a serializable
        subset of config variables as a shell script snippet.
     */
-    defineHookVariables = { config, options }:
+    defineHookVariables = { options }:
       let
         sanitizeName = lib.replaceStrings [ "-" ] [ "_" ];
         isAttrsOfSubmodule = o: o.type.name == "attrsOf" && o.type.nestedTypes.elemType.name == "submodule";
@@ -229,7 +229,7 @@ let
         type = lib.types.str;
         default = ''
           ( # ${config.type} ${concatMapStringsSep " " (n: toString (config.${n} or "")) ["name" "device" "format" "mountpoint"]} #
-            ${diskoLib.indent (diskoLib.defineHookVariables { inherit config options; })}
+            ${diskoLib.indent (diskoLib.defineHookVariables { inherit options; })}
             ${config.preCreateHook}
             ${diskoLib.indent attrs.default}
             ${config.postCreateHook}
@@ -238,7 +238,7 @@ let
         description = "Creation script";
       };
 
-    mkMountOption = { config, options, default }@attrs:
+    mkMountOption = { default, ... }@attrs:
       lib.mkOption {
         internal = true;
         readOnly = true;
@@ -253,7 +253,7 @@ let
     */
     writeCheckedBash = { pkgs, checked ? false, noDeps ? false }: pkgs.writers.makeScriptWriter {
       interpreter = if noDeps then "/usr/bin/env bash" else "${pkgs.bash}/bin/bash";
-      check = lib.optionalString checked (pkgs.writeScript "check" ''
+      check = lib.optionalString (checked && !pkgs.hostPlatform.isRiscV64 && !pkgs.hostPlatform.isx86_32) (pkgs.writeScript "check" ''
         set -efu
         ${pkgs.shellcheck}/bin/shellcheck -e SC2034 "$1"
       '');
@@ -439,7 +439,7 @@ let
 
               # shellcheck disable=SC2043
               for dev in ${toString (lib.catAttrs "device" (lib.attrValues devices.disk))}; do
-                ${../disk-deactivate}/disk-deactivate "$dev" | bash -x
+                ${../disk-deactivate}/disk-deactivate "$dev"
               done
             '';
           };
@@ -584,6 +584,6 @@ let
         (lib.attrNames (builtins.readDir ./types))
     );
 
-  };
+  } // outputs;
 in
 diskoLib

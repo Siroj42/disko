@@ -45,6 +45,23 @@ in
         type = lib.types.bool;
         default = config.boot.loader.systemd-boot.enable || config.boot.loader.grub.efiSupport;
       };
+      extraChecks = lib.mkOption {
+        description = ''
+          extra checks to run in the `system.build.installTest`.
+        '';
+        type = lib.types.lines;
+        default = "";
+        example = ''
+          machine.succeed("test -e /var/secrets/my.secret")
+        '';
+      };
+      extraConfig = lib.mkOption {
+        description = ''
+          Extra NixOS config for your test. Can be used to specify a different luks key for tests.
+          A dummy key is in /tmp/secret.key
+        '';
+        default = { };
+      };
     };
   };
   config = lib.mkIf (cfg.devices.disk != { }) {
@@ -54,12 +71,21 @@ in
       disko = builtins.trace "the .disko output is deprecated, please use .diskoScript instead" (cfg.devices._scripts pkgs).diskoScript;
       diskoNoDeps = builtins.trace "the .diskoNoDeps output is deprecated, please use .diskoScriptNoDeps instead" (cfg.devices._scripts pkgs).diskoScriptNoDeps;
 
+      diskoImages = diskoLib.makeDiskImages {
+        nixosConfig = args;
+      };
+      diskoImagesScript = diskoLib.makeDiskImagesScript {
+        nixosConfig = args;
+      };
+
       installTest = diskoLib.testLib.makeDiskoTest {
         inherit extendModules pkgs;
         name = "${config.networking.hostName}-disko";
         disko-config = builtins.removeAttrs config [ "_module" ];
         testMode = "direct";
         efi = cfg.tests.efi;
+        extraSystemConfig = cfg.tests.extraConfig;
+        extraTestScript = cfg.tests.extraChecks;
       };
     };
 

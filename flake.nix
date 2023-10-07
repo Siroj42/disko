@@ -19,7 +19,7 @@
     {
       nixosModules.default = self.nixosModules.disko; # convention
       nixosModules.disko = import ./module.nix;
-      lib = import ./. {
+      lib = import ./lib {
         inherit (nixpkgs) lib;
       };
       packages = forAllSystems (system:
@@ -37,32 +37,37 @@
       checks = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          nixosTests = import ./tests {
+          # FIXME: aarch64-linux seems to hang on boot
+          nixosTests = nixpkgs.lib.optionalAttrs pkgs.hostPlatform.isx86_64 (import ./tests {
             inherit pkgs;
             makeTest = import (pkgs.path + "/nixos/tests/make-test-python.nix");
             eval-config = import (pkgs.path + "/nixos/lib/eval-config.nix");
-          };
+          });
           shellcheck = pkgs.runCommand "shellcheck" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
             cd ${./.}
             shellcheck disk-deactivate/disk-deactivate disko
             touch $out
           '';
         in
-        nixosTests // pkgs.lib.optionalAttrs (!pkgs.buildPlatform.isRiscV64) { inherit shellcheck; });
+        # FIXME: aarch64-linux seems to hang on boot
+        nixpkgs.lib.optionalAttrs pkgs.hostPlatform.isx86_64 nixosTests //
+        pkgs.lib.optionalAttrs (!pkgs.buildPlatform.isRiscV64 && !pkgs.hostPlatform.isx86_32) { inherit shellcheck; });
       formatter = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in
         pkgs.writeShellApplication {
-          name = "normalise_nix";
+          name = "format";
           runtimeInputs = with pkgs; [
             nixpkgs-fmt
-            statix
+            deno
+            deadnix
           ];
           text = ''
             set -o xtrace
             nixpkgs-fmt "$@"
-            statix fix "$@"
+            deno fmt "$@"
+            deadnix --edit "$@"
           '';
         }
       );

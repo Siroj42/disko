@@ -18,9 +18,10 @@ let
     bash
     coreutils
     gnused
+    parted # for partprobe
     systemdMinimal
     nix
-    utillinux
+    util-linux
   ];
   preVM = ''
     ${lib.concatMapStringsSep "\n" (disk: "truncate -s ${disk.imageSize} ${disk.name}.raw") (lib.attrValues nixosConfig.config.disko.devices.disk)}
@@ -31,7 +32,7 @@ let
     ${lib.concatMapStringsSep "\n" (disk: "cp ${disk.name}.raw \"$out\"/${disk.name}.raw") (lib.attrValues nixosConfig.config.disko.devices.disk)}
     ${extraPostVM}
   '';
-  builder = ''
+  partitioner = ''
     # running udev, stolen from stage-1.sh
     echo "running udev..."
     ln -sfn /proc/self/fd /dev/fd
@@ -42,6 +43,7 @@ let
     ln -sfn ${systemToInstall.config.system.build.etc}/etc/udev/rules.d /etc/udev/rules.d
     mkdir -p /dev/.mdadm
     ${pkgs.systemdMinimal}/lib/systemd/systemd-udevd --daemon
+    partprobe
     udevadm trigger --action=add
     udevadm settle
 
@@ -52,6 +54,8 @@ let
     }}/registration
 
     ${systemToInstall.config.system.build.diskoScript}
+  '';
+  installer = ''
     ${systemToInstall.config.system.build.nixos-install}/bin/nixos-install --system ${systemToInstall.config.system.build.toplevel} --keep-going --no-channel-copy -v --no-root-password --option binary-caches ""
   '';
   QEMU_OPTS = lib.concatMapStringsSep " " (disk: "-drive file=${disk.name}.raw,if=virtio,cache=unsafe,werror=report") (lib.attrValues nixosConfig.config.disko.devices.disk);
@@ -60,10 +64,10 @@ in
   pure = pkgs.vmTools.runInLinuxVM (pkgs.runCommand name
     {
       buildInputs = dependencies;
-      inherit preVM QEMU_OPTS;
+      inherit preVM postVM QEMU_OPTS;
       memSize = 1024;
     }
-    builder);
+    (partitioner + installer));
   impure = diskoLib.writeCheckedBash { inherit checked pkgs; } name ''
     set -efu
     export PATH=${lib.makeBinPath dependencies}
@@ -120,18 +124,21 @@ in
       set -eu
       export PATH=${lib.makeBinPath dependencies}
       for src in /tmp/xchg/copy_before_disko/*; do
+        [ -e "$src" ] || continue
         dst=$(basename "$src" | base64 -d)
         mkdir -p "$(dirname "$dst")"
         cp -r "$src" "$dst"
       done
       set -f
-      ${builder}
+      ${partitioner}
       set +f
-      for dir in /tmp/xchg/copy_after_disko/*; do
+      for src in /tmp/xchg/copy_after_disko/*; do
+        [ -e "$src" ] || continue
         dst=/mnt/$(basename "$src" | base64 -d)
         mkdir -p "$(dirname "$dst")"
         cp -r "$src" "$dst"
       done
+      ${installer}
     ''}
     export QEMU_OPTS=${lib.escapeShellArg "${QEMU_OPTS} -m 1024"}
     ${pkgs.bash}/bin/sh -e ${pkgs.vmTools.vmRunCommand pkgs.vmTools.qemuCommandLinux}

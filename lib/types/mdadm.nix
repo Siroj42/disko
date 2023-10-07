@@ -42,6 +42,7 @@
           --force \
           --homehost=any \
           "''${disk_devices[@]}"
+        partprobe /dev/md/${config.name}
         udevadm trigger --subsystem-match=block
         udevadm settle
         # for some reason mdadm devices spawn with an existing partition table, so we need to wipe it
@@ -60,7 +61,7 @@
       readOnly = true;
       default =
         [
-          (if lib.versionAtLeast (lib.versions.majorMinor lib.version) "23.11" then { 
+          (if lib.versionAtLeast (lib.versions.majorMinor lib.version) "23.11" then {
             boot.swraid.enable = true;
           } else {
             boot.initrd.services.swraid.enable = true;
@@ -73,7 +74,9 @@
       internal = true;
       readOnly = true;
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
-      default = pkgs: (lib.optionals (config.content != null) (config.content._pkgs pkgs));
+      default = pkgs: [
+        pkgs.parted # for partprobe
+      ] ++ (lib.optionals (config.content != null) (config.content._pkgs pkgs));
       description = "Packages";
     };
   };

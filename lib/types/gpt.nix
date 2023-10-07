@@ -107,12 +107,15 @@ in
       default = ''
         ${lib.concatStrings (map (partition: ''
           sgdisk \
+            --set-alignment=2048 \
+            --align-end \
             --new=${toString partition._index}:${partition.start}:${partition.end} \
             --change-name=${toString partition._index}:${partition.label} \
             --typecode=${toString partition._index}:${partition.type} \
 						${lib.optionalString partition.legacyBootable "--attributes=${toString partition._index}:set:2"} \
 						${config.device}
           # ensure /dev/disk/by-path/..-partN exists before continuing
+          partprobe ${config.device}
           udevadm trigger --subsystem-match=block
           udevadm settle
           ${lib.optionalString (partition.content != null) partition.content._create}
@@ -153,7 +156,11 @@ in
       readOnly = true;
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
       default = pkgs:
-        [ pkgs.gptfdisk pkgs.systemdMinimal ] ++ lib.flatten (map
+        [
+          pkgs.gptfdisk
+          pkgs.systemdMinimal
+          pkgs.parted # for partprobe
+        ] ++ lib.flatten (map
           (partition:
             lib.optional (partition.content != null) (partition.content._pkgs pkgs)
           )

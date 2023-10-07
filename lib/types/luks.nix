@@ -1,15 +1,19 @@
 { config, options, lib, diskoLib, parent, device, ... }:
 let
   keyFile =
-    if lib.hasAttr "keyFile" config.settings
+    if config.settings ? "keyFile"
     then config.settings.keyFile
+    else if config.askPassword
+    then ''<(set +x; echo -n "$password"; set -x)''
     else if config.passwordFile != null
-    then ''<(echo -n "$(cat ${config.passwordFile})")''
+    # do not print the password to the console
+    then ''<(set +x; echo -n "$(cat ${config.passwordFile})"; set -x)''
     else if config.keyFile != null
-    then lib.warn
-      ("The option `keyFile` is deprecated."
-      + "Use passwordFile instead if you want to use interactive login or settings.keyFile if you want to use key file login")
-      config.keyFile
+    then
+      lib.warn
+        ("The option `keyFile` is deprecated."
+          + "Use passwordFile instead if you want to use interactive login or settings.keyFile if you want to use key file login")
+        config.keyFile
     else null;
   keyFileArgs = ''\
     ${lib.optionalString (keyFile != null) "--key-file ${keyFile}"} \
@@ -44,6 +48,11 @@ in
       default = null;
       description = "Path to the file which contains the password for initial encryption";
       example = "/tmp/disk.key";
+    };
+    askPassword = lib.mkOption {
+      type = lib.types.bool;
+      default = config.keyFile == null && config.passwordFile == null && (! config.settings ? "keyFile");
+      description = "Whether to ask for a password for initial encryption";
     };
     settings = lib.mkOption {
       default = { };
@@ -95,9 +104,24 @@ in
     _create = diskoLib.mkCreateOption {
       inherit config options;
       default = ''
+        ${lib.optionalString config.askPassword ''
+          set +x
+          askPassword() {
+            echo "Enter password for ${config.device}: "
+            read -s password
+            echo "Enter password for ${config.device} again to be safe: "
+            read -s password_check
+            export password
+            [ "$password" = "$password_check" ]
+          }
+          until askPassword; do
+            echo "Passwords did not match, please try again."
+          done
+          set -x
+        ''}
         cryptsetup -q luksFormat ${config.device} ${toString config.extraFormatArgs} \
           ${keyFileArgs}
-        cryptsetup luksOpen ${config.device} ${config.name} \
+        cryptsetup open ${config.device} ${config.name} \
           ${toString config.extraOpenArgs} \
           ${keyFileArgs}
         ${toString (lib.lists.forEach config.additionalKeyFiles (x: "cryptsetup luksAddKey ${config.device} ${x} ${keyFileArgs}"))}
@@ -112,9 +136,10 @@ in
         in
         {
           dev = ''
-            cryptsetup status ${config.name} >/dev/null 2>/dev/null ||
-              cryptsetup luksOpen ${config.device} ${config.name} \
+            if ! cryptsetup status ${config.name} >/dev/null 2>/dev/null; then
+              cryptsetup open ${config.device} ${config.name} \
               ${keyFileArgs}
+            fi
             ${lib.optionalString (config.content != null) contentMount.dev or ""}
           '';
           fs = lib.optionalAttrs (config.content != null) contentMount.fs or { };

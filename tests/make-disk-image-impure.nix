@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> { }
 , diskoLib ? pkgs.callPackage ../lib { }
 }:
-diskoLib.makeDiskImageScript {
+diskoLib.makeDiskImagesScript {
   nixosConfig = pkgs.nixos [
     ../module.nix
     ../example/simple-efi.nix
@@ -10,6 +10,6 @@ diskoLib.makeDiskImageScript {
       system.stateVersion = config.system.nixos.version;
     })
   ];
-  checked = !pkgs.hostPlatform.isRiscV64;
+  checked = true;
 }
 

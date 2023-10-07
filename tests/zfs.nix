@@ -5,7 +5,9 @@ diskoLib.testLib.makeDiskoTest {
   inherit pkgs;
   name = "zfs";
   disko-config = ../example/zfs.nix;
+  extraInstallerConfig.networking.hostId = "8425e349";
   extraSystemConfig = {
+    networking.hostId = "8425e349";
     fileSystems."/zfs_legacy_fs".options = [ "nofail" ]; # TODO find out why we need this!
   };
   extraTestScript = ''
@@ -17,8 +19,8 @@ diskoLib.testLib.makeDiskoTest {
             out == expected_value
         ), f"Expected {property}={expected_value} on {ds}, got: {out}"
 
-    assert_property("zroot", "compression", "lz4")
-    assert_property("zroot/zfs_fs", "compression", "lz4")
+    assert_property("zroot", "compression", "zstd")
+    assert_property("zroot/zfs_fs", "compression", "zstd")
     assert_property("zroot", "com.sun:auto-snapshot", "false")
     assert_property("zroot/zfs_fs", "com.sun:auto-snapshot", "true")
     assert_property("zroot/zfs_testvolume", "volsize", "10M")

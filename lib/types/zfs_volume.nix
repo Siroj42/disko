@@ -50,6 +50,8 @@
         zfs create ${config._parent.name}/${config.name} \
           ${lib.concatStringsSep " " (lib.mapAttrsToList (n: v: "-o ${n}=${v}") config.options)} \
           -V ${config.size}
+        zvol_wait
+        partprobe /dev/zvol/${config._parent.name}/${config.name}
         udevadm trigger --subsystem-match=block
         udevadm settle
         ${lib.optionalString (config.content != null) config.content._create}
@@ -71,7 +73,10 @@
       internal = true;
       readOnly = true;
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
-      default = pkgs: [ pkgs.util-linux ] ++ lib.optionals (config.content != null) (config.content._pkgs pkgs);
+      default = pkgs: [
+        pkgs.util-linux
+        pkgs.parted # for partprobe
+      ] ++ lib.optionals (config.content != null) (config.content._pkgs pkgs);
       description = "Packages";
     };
   };
