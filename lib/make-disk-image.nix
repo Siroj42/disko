@@ -45,7 +45,7 @@ let
     ${pkgs.systemdMinimal}/lib/systemd/systemd-udevd --daemon
     partprobe
     udevadm trigger --action=add
-    udevadm settle
+    udevadm settle -t 600
 
     # populate nix db, so nixos-install doesn't complain
     export NIX_STATE_DIR=$TMPDIR/state
